@@ -207,10 +207,15 @@ DWORD WINAPI game_function(LPVOID arg) {
 
         // Turno del giocatore 1 (X)
         printf("[GAME] Turno di %s (X)\n", player1->name);
+
+        // Comunica al player1 che è il suo turno
         send(player1->socket, (const char*)&YOUR_MOVE_FLAG, sizeof(int), NO_FLAG);
         send(player1->socket, table, GRID_SIZE * sizeof(char), NO_FLAG);
+        
+        // Comunica al player2 che deve attendere
         send(player2->socket, (const char*)&OPPONENT_MOVE_FLAG, sizeof(int), NO_FLAG);
-
+        send(player2->socket, table, GRID_SIZE * sizeof(char), NO_FLAG);
+        
         // Ricevi mossa dal giocatore 1
         if(recv(player1->socket, (char*)&move, sizeof(int), 0) <= 0) {
             printf("[ERRORE] Ricezione mossa fallita\n");
@@ -219,6 +224,10 @@ DWORD WINAPI game_function(LPVOID arg) {
         move = ntohs(move);
         printf("[GAME] %s ha mosso in posizione %d\n", player1->name, move);
         table[move] = 'X';
+        send(player1->socket, (const char*)&OPPONENT_MOVE_FLAG, sizeof(int), NO_FLAG);
+        send(player1->socket, table, GRID_SIZE * sizeof(char), NO_FLAG);
+        
+        send(player2->socket, (const char*)&OPPONENT_MOVE_FLAG, sizeof(int), NO_FLAG);
         send(player2->socket, table, GRID_SIZE * sizeof(char), NO_FLAG);
         // Controlla stato del gioco
         win_flag = check_win(table);
@@ -252,9 +261,14 @@ DWORD WINAPI game_function(LPVOID arg) {
 
         // Turno del giocatore 2 (O)
         printf("[GAME] Turno di %s (O)\n", player2->name);
-        send(player1->socket, (const char*)&OPPONENT_MOVE_FLAG, sizeof(int), NO_FLAG);
+    
+        // Comunica al player2 che è il suo turno
         send(player2->socket, (const char*)&YOUR_MOVE_FLAG, sizeof(int), NO_FLAG);
         send(player2->socket, table, GRID_SIZE * sizeof(char), NO_FLAG);
+        
+        // Comunica al player1 che deve attendere
+        send(player1->socket, (const char*)&OPPONENT_MOVE_FLAG, sizeof(int), NO_FLAG);
+        send(player1->socket, table, GRID_SIZE * sizeof(char), NO_FLAG);
 
         // Ricevi mossa dal giocatore 2
         if(recv(player2->socket, (char*)&move, sizeof(int), 0) <= 0) {
@@ -264,7 +278,12 @@ DWORD WINAPI game_function(LPVOID arg) {
         move = ntohs(move);
         printf("[GAME] %s ha mosso in posizione %d\n", player2->name, move);
         table[move] = 'O';
-        send(player1->socket, table, GRID_SIZE * sizeof(char), NO_FLAG);
+    // Invia aggiornamento a ENTRAMBI i giocatori
+    send(player1->socket, (const char*)&OPPONENT_MOVE_FLAG, sizeof(int), NO_FLAG);
+    send(player1->socket, table, GRID_SIZE * sizeof(char), NO_FLAG);
+    
+    send(player2->socket, (const char*)&OPPONENT_MOVE_FLAG, sizeof(int), NO_FLAG);
+    send(player2->socket, table, GRID_SIZE * sizeof(char), NO_FLAG);
         // Controlla stato del gioco
         win_flag = check_win(table);
         printf("[GAME] Stato dopo mossa: %d\n", win_flag);
