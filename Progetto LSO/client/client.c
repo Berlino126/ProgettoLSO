@@ -31,7 +31,7 @@ void print_grid(char* grid) {
         printf("\n");
         
         if (i < TABLE_SIZE - 1) {
-            printf("---+---+---\n");
+            printf("-------------\n");
         }
     }
     printf("\n");
@@ -46,6 +46,27 @@ void clear_screen() {
 void show_menu() {
     clear_screen();
     printf("=== TRIS ONLINE ===\n\n");
+    printf("1. Partita casuale\n");
+    printf("2. Crea stanza privata\n");
+    printf("3. Unisciti a stanza privata\n");
+    printf("4. Esci\n\n");
+}
+/* Ottiene la scelta del menu */
+int get_menu_choice() {
+    char input[10];
+    int choice;
+    
+    while(1) {
+        printf("Seleziona un'opzione (1-4): ");
+        fgets(input, sizeof(input), stdin);
+        
+        if(sscanf(input, "%d", &choice) != 1 || choice < 1 || choice > 4) {
+            printf("Scelta non valida. Inserisci un numero tra 1 e 4.\n");
+            continue;
+        }
+        
+        return choice;
+    }
 }
 
 /* Converte coordinate 1-9 in indice della griglia (0-8) */
@@ -227,6 +248,7 @@ void handle_game(SOCKET client_socket, char* player_name, char* opponent_name,
 }
 
 /* Funzione principale del client */
+/* Funzione principale del client */
 int main(int argc, char* argv[]) {
     WSADATA wsaData;
     SOCKET client_socket;
@@ -238,8 +260,7 @@ int main(int argc, char* argv[]) {
     char player_symbol, opponent_symbol;
     char grid[GRID_SIZE];
     
-    show_menu();
-    
+    // Configurazione iniziale
     if (argc > 1) {
         strncpy(server_ip, argv[1], sizeof(server_ip)-1);
         if (argc > 2) {
@@ -247,54 +268,151 @@ int main(int argc, char* argv[]) {
         }
     }
     
+    // Inizializzazione Winsock
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         fprintf(stderr, "WSAStartup fallito. Errore: %d\n", WSAGetLastError());
         return EXIT_FAILURE;
     }
     
-    if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
-        fprintf(stderr, "Creazione socket fallita. Errore: %d\n", WSAGetLastError());
-        WSACleanup();
-        return EXIT_FAILURE;
-    }
-    
-    server.sin_addr.s_addr = inet_addr(server_ip);
-    server.sin_family = AF_INET;
-    server.sin_port = htons(server_port);
-    
-    printf("Inserisci il tuo nome (max 49 caratteri): ");
+    // Input nome giocatore
+    clear_screen();
+    printf("=== TRIS ONLINE ===\n\n");
+    printf("Inserisci il tuo nome : ");
     fgets(player_name, sizeof(player_name), stdin);
     player_name[strcspn(player_name, "\n")] = '\0';
     
-    if (connect(client_socket, (struct sockaddr*)&server, sizeof(server)) < 0) {
-        fprintf(stderr, "Connessione al server fallita. Errore: %d\n", WSAGetLastError());
-        closesocket(client_socket);
-        WSACleanup();
-        return EXIT_FAILURE;
+    // Menu principale
+    while(1) {
+        show_menu();
+        int choice = get_menu_choice();
+        
+        client_socket = INVALID_SOCKET;
+        
+        switch(choice) {
+            case 1: { // Partita casuale
+                if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
+                    fprintf(stderr, "Creazione socket fallita. Errore: %d\n", WSAGetLastError());
+                    break;
+                }
+                
+                server.sin_addr.s_addr = inet_addr(server_ip);
+                server.sin_family = AF_INET;
+                server.sin_port = htons(server_port);
+                
+                if (connect(client_socket, (struct sockaddr*)&server, sizeof(server)) < 0) {
+                    fprintf(stderr, "Connessione al server fallita. Errore: %d\n", WSAGetLastError());
+                    closesocket(client_socket);
+                    break;
+                }
+                
+                // Invio dati giocatore
+                int name_len = strlen(player_name);
+                int net_name_len = htons(name_len);
+                
+                if (send(client_socket, (const char*)&net_name_len, sizeof(int), 0) < 0 ||
+                    send(client_socket, player_name, name_len, 0) < 0) {
+                    fprintf(stderr, "Invio dati giocatore fallito\n");
+                    closesocket(client_socket);
+                    break;
+                }
+                
+                printf("\nConnessione al server stabilita. In attesa di un avversario...\n");
+                handle_game(client_socket, player_name, opponent_name, player_symbol, opponent_symbol, grid);
+                break;
+            }
+                
+            case 2: { // Crea stanza privata
+                /*if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
+                    fprintf(stderr, "Creazione socket fallita. Errore: %d\n", WSAGetLastError());
+                    break;
+                }
+                
+                server.sin_addr.s_addr = inet_addr(server_ip);
+                server.sin_family = AF_INET;
+                server.sin_port = htons(server_port);
+                
+                if (connect(client_socket, (struct sockaddr*)&server, sizeof(server)) < 0) {
+                    fprintf(stderr, "Connessione al server fallita. Errore: %d\n", WSAGetLastError());
+                    closesocket(client_socket);
+                    break;
+                }
+                
+                // Invio dati giocatore + flag creazione stanza
+                int name_len = strlen(player_name);
+                int net_name_len = htons(name_len);
+                int create_flag = htons(1); // Codice per creazione stanza
+                
+                if (send(client_socket, (const char*)&net_name_len, sizeof(int), 0) < 0 ||
+                    send(client_socket, player_name, name_len, 0) < 0 ||
+                    send(client_socket, (const char*)&create_flag, sizeof(int), 0) < 0) {
+                    fprintf(stderr, "Invio dati stanza fallito\n");
+                    closesocket(client_socket);
+                    break;
+                }
+                
+                printf("\nStanza privata creata! In attesa di un avversario...\n");
+                handle_game(client_socket, player_name, opponent_name, player_symbol, opponent_symbol, grid);
+                break;*/
+            }
+                
+            case 3: { // Unisciti a stanza privata
+                /* char room_code[10];
+                printf("\nInserisci il codice stanza: ");
+                fgets(room_code, sizeof(room_code), stdin);
+                room_code[strcspn(room_code, "\n")] = '\0';
+                
+                if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
+                    fprintf(stderr, "Creazione socket fallita. Errore: %d\n", WSAGetLastError());
+                    break;
+                }
+                
+                server.sin_addr.s_addr = inet_addr(server_ip);
+                server.sin_family = AF_INET;
+                server.sin_port = htons(server_port);
+                
+                if (connect(client_socket, (struct sockaddr*)&server, sizeof(server)) < 0) {
+                    fprintf(stderr, "Connessione al server fallita. Errore: %d\n", WSAGetLastError());
+                    closesocket(client_socket);
+                    break;
+                }
+                
+                // Invio dati giocatore + flag join stanza + codice
+                int name_len = strlen(player_name);
+                int net_name_len = htons(name_len);
+                int join_flag = htons(2); // Codice per join stanza
+                int code_len = strlen(room_code);
+                int net_code_len = htons(code_len);
+                
+                if (send(client_socket, (const char*)&net_name_len, sizeof(int), 0) < 0 ||
+                    send(client_socket, player_name, name_len, 0) < 0 ||
+                    send(client_socket, (const char*)&join_flag, sizeof(int), 0) < 0 ||
+                    send(client_socket, (const char*)&net_code_len, sizeof(int), 0) < 0 ||
+                    send(client_socket, room_code, code_len, 0) < 0) {
+                    fprintf(stderr, "Invio dati stanza fallito\n");
+                    closesocket(client_socket);
+                    break;
+                }
+                
+                printf("\nConnessione alla stanza in corso...\n");
+                handle_game(client_socket, player_name, opponent_name, player_symbol, opponent_symbol, grid);
+                break;
+                */
+            }
+                
+            case 4: // Esci
+                WSACleanup();
+                printf("\nArrivederci!\n");
+                return EXIT_SUCCESS;
+        }
+        
+        if (client_socket != INVALID_SOCKET) {
+            closesocket(client_socket);
+        }
+        
+        printf("\nPremi un tasto per continuare...");
+        _getch();
     }
     
-    int name_len = strlen(player_name);
-    int net_name_len = htons(name_len);
-    
-    if (send(client_socket, (const char*)&net_name_len, sizeof(int), 0) < 0) {
-        fprintf(stderr, "Invio lunghezza nome fallito. Errore: %d\n", WSAGetLastError());
-        closesocket(client_socket);
-        WSACleanup();
-        return EXIT_FAILURE;
-    }
-    
-    if (send(client_socket, player_name, name_len, 0) < 0) {
-        fprintf(stderr, "Invio nome fallito. Errore: %d\n", WSAGetLastError());
-        closesocket(client_socket);
-        WSACleanup();
-        return EXIT_FAILURE;
-    }
-    
-    printf("Connessione al server stabilita. In attesa di un avversario...\n");
-    
-    handle_game(client_socket, player_name, opponent_name, player_symbol, opponent_symbol, grid);
-    
-    closesocket(client_socket);
     WSACleanup();
     return EXIT_SUCCESS;
 }
