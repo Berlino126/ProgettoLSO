@@ -230,7 +230,6 @@ void handle_game(SOCKET client_socket, char *player_name, char *opponent_name,
             clear_screen();
             // 4. Aggiungi visualizzazione ID partita durante l'attesa
             printf("=== TURNO AVVERSARIO ===\n");
-            printf("ID Partita: %d\n", game_id);
             printf("Tu: %c (%s) vs Avversario: %c (%s)\n",
                    player_symbol, player_name, opponent_symbol, opponent_name);
 
@@ -250,7 +249,6 @@ void handle_game(SOCKET client_socket, char *player_name, char *opponent_name,
             clear_screen();
             // 5. Aggiungi ID partita al risultato finale
             printf("=== VITTORIA! ===\n");
-            printf("ID Partita: %d\n", game_id);
             printf("Hai sconfitto %s!\n", opponent_name);
             print_grid(grid);
 
@@ -269,7 +267,6 @@ void handle_game(SOCKET client_socket, char *player_name, char *opponent_name,
 
             clear_screen();
             printf("=== SCONFITTA ===\n");
-            printf("ID Partita: %d\n", game_id);
             printf("%s ti ha sconfitto!\n", opponent_name);
             print_grid(grid);
 
@@ -288,7 +285,7 @@ void handle_game(SOCKET client_socket, char *player_name, char *opponent_name,
 
             clear_screen();
             printf("=== PAREGGIO ===\n");
-            printf("ID Partita: %d\n", game_id);
+
             printf("La partita contro %s è terminata in pareggio!\n", opponent_name);
             print_grid(grid);
 
