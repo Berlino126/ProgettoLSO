@@ -264,9 +264,11 @@ void handle_join_request(player_t* player, int game_id) {
     
     // Invia la richiesta al creatore della partita
     game->challenger = player;
-    int name_len = htons(player->name_len);
     
-    send(game->creator->socket, (const char*)&GAME_REQUEST_FLAG, sizeof(int), NO_FLAG);
+    int name_len = htons(player->name_len);
+    int net_flag = htons(GAME_REQUEST_FLAG); // <--- AGGIUNGI QUESTO
+    send(game->creator->socket, (const char*)&net_flag, sizeof(int), NO_FLAG);
+    
     send(game->creator->socket, (const char*)&name_len, sizeof(int), NO_FLAG);
     send(game->creator->socket, player->name, player->name_len, NO_FLAG);
     
@@ -632,57 +634,77 @@ int main(int argc, char *argv[])
     memset(&player2_struct, 0, len_struct);
 
     // Loop principale di accettazione connessioni
-    do
-    {
-        printf("[SERVER] In attesa del primo giocatore...\n");
-        SOCKET player1_socket = accept(server_socket, (struct sockaddr *)&player1_struct, &len_struct);
-        if (player1_socket == INVALID_SOCKET)
-        {
-            fprintf(stderr, "[ERRORE] Accept primo giocatore fallito: %d\n", WSAGetLastError());
+    do {
+        printf("[SERVER] In attesa di connessioni...\n");
+        SOCKET client_socket = accept(server_socket, NULL, NULL);
+        if (client_socket == INVALID_SOCKET) {
+            fprintf(stderr, "[ERRORE] Accept fallito: %d\n", WSAGetLastError());
             continue;
         }
-        printf("[SERVER] Primo giocatore connesso\n");
-
-        player_t *player1 = receive_player(player1_socket);
-        if (player1 == NULL)
-        {
-            closesocket(player1_socket);
+    
+        // Peek per capire il tipo di richiesta
+        int command_net;
+        if (recv(client_socket, (char*)&command_net, sizeof(int), MSG_PEEK) <= 0) {
+            closesocket(client_socket);
             continue;
         }
-
-        // Comunica al primo giocatore di attendere
-        send(player1->socket, (const char *)&WAIT_FLAG, sizeof(int), 0);
-
-        printf("[SERVER] In attesa del secondo giocatore...\n");
-        SOCKET player2_socket = accept(server_socket, (struct sockaddr *)&player2_struct, &len_struct);
-        if (player2_socket == INVALID_SOCKET)
-        {
-            fprintf(stderr, "[ERRORE] Accept secondo giocatore fallito: %d\n", WSAGetLastError());
-            delete_player(player1);
-            continue;
+    
+        int command = ntohs(command_net);
+    
+        if (command == WAIT_FLAG || command == CREATE_GAME_FLAG || command == JOIN_GAME_FLAG) {
+            // Ricevi normalmente il giocatore
+            player_t* player = receive_player(client_socket);
+            if (!player) {
+                closesocket(client_socket);
+                continue;
+            }
+    
+            if (command == WAIT_FLAG) {
+                // LOGICA PARTITA CASUALE — come prima
+                printf("[SERVER] In attesa di secondo giocatore...\n");
+    
+                SOCKET player2_socket = accept(server_socket, NULL, NULL);
+                if (player2_socket == INVALID_SOCKET) {
+                    fprintf(stderr, "[ERRORE] Accept secondo giocatore fallito\n");
+                    delete_player(player);
+                    continue;
+                }
+    
+                player_t* player2 = receive_player(player2_socket);
+                if (!player2) {
+                    closesocket(player2_socket);
+                    delete_player(player);
+                    continue;
+                }
+    
+                HANDLE game_thread = CreateThread(NULL, 0, game_function, create_game(player, player2), 0, NULL);
+                if (game_thread) CloseHandle(game_thread);
+            }
+    
+            // Per CREATE_GAME_FLAG e JOIN_GAME_FLAG non devi fare altro qui:
+            // il resto è gestito dentro receive_player e handle_join_request
         }
-        printf("[SERVER] Secondo giocatore connesso\n");
-
-        player_t *player2 = receive_player(player2_socket);
-        if (player2 == NULL)
-        {
-            closesocket(player2_socket);
-            delete_player(player1);
-            continue;
+        else {
+            // Caso risposta a una richiesta di unione (dal creatore)
+            int game_id_net, response_flag_net;
+            if (recv(client_socket, (char*)&game_id_net, sizeof(int), 0) <= 0 ||
+                recv(client_socket, (char*)&response_flag_net, sizeof(int), 0) <= 0) {
+                fprintf(stderr, "[ERRORE] Ricezione risposta a richiesta fallita\n");
+                closesocket(client_socket);
+                continue;
+            }
+    
+            int game_id = ntohl(game_id_net);
+            int response_flag = ntohs(response_flag_net);
+    
+            pending_game_t* pending = find_pending_game(game_id);
+            if (pending && pending->creator && pending->creator->socket == client_socket) {
+                handle_game_response(pending->creator, game_id, response_flag);
+            } else {
+                fprintf(stderr, "[ERRORE] Creatore non valido per partita %d\n", game_id);
+            }
         }
-
-        // Crea un thread per gestire la partita
-        printf("[SERVER] Creazione thread partita...\n");
-        HANDLE game_thread = CreateThread(NULL, 0, game_function, create_game(player1, player2), 0, NULL);
-        if (game_thread == NULL)
-        {
-            fprintf(stderr, "[ERRORE] Creazione thread fallita: %d\n", GetLastError());
-            delete_game(create_game(player1, player2));
-        }
-        else
-        {
-            CloseHandle(game_thread);
-        }
+    
     } while (RUNNING);
 
     printf("[SERVER] Spegnimento server...\n");
