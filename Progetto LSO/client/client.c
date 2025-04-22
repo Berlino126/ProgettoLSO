@@ -18,16 +18,13 @@
 #define WIN_FLAG 4
 #define LOSE_FLAG 5
 #define DRAW_FLAG 6
-
-const int CREATE_GAME_FLAG = 7;
-const int JOIN_GAME_FLAG = 8;
-const int GAME_REQUEST_FLAG = 9;
-const int GAME_ACCEPTED_FLAG = 10;
-const int GAME_REJECTED_FLAG = 11;
-const int LIST_GAMES_FLAG = 12;
-//-------------
-//Prototipi: 
-void print_grid(char *grid);
+#define CREATE_PRIVATE 10
+#define PRIVATE_CREATED 11
+#define JOIN_PRIVATE 12
+#define JOIN_REQUEST 13
+#define JOIN_ACCEPTED 14
+#define JOIN_REJECTED 15
+#define NO_FLAG 0 
 /* Stampa la griglia di gioco */
 void print_grid(char *grid)
 {
@@ -50,18 +47,6 @@ void print_grid(char *grid)
     }
     printf("\n");
 }
-void clear_screen();
-void show_menu();
-int get_menu_choice();
-int position_to_index(int pos);
-int get_valid_move(char *grid);
-void handle_game(SOCKET client_socket, char *player_name, char *opponent_name,
-    char player_symbol, char opponent_symbol, char *grid);
-void show_available_games(SOCKET client_socket);
-void handle_join_private_game(SOCKET client_socket, char* player_name);
-
-//-------------
-
 
 /* Pulisce lo schermo */
 void clear_screen()
@@ -70,7 +55,8 @@ void clear_screen()
 }
 
 /* Mostra il menu principale */
-void show_menu() {
+void show_menu()
+{
     clear_screen();
     printf("=== TRIS ONLINE ===\n\n");
     printf("1. Partita casuale\n");
@@ -79,15 +65,18 @@ void show_menu() {
     printf("4. Esci\n\n");
 }
 /* Ottiene la scelta del menu */
-int get_menu_choice() {
+int get_menu_choice()
+{
     char input[10];
     int choice;
 
-    while (1) {
+    while (1)
+    {
         printf("Seleziona un'opzione (1-4): ");
         fgets(input, sizeof(input), stdin);
 
-        if (sscanf(input, "%d", &choice) != 1 || choice < 1 || choice > 4) {
+        if (sscanf(input, "%d", &choice) != 1 || choice < 1 || choice > 4)
+        {
             printf("Scelta non valida. Inserisci un numero tra 1 e 4.\n");
             continue;
         }
@@ -95,7 +84,6 @@ int get_menu_choice() {
         return choice;
     }
 }
-
 
 /* Converte coordinate 1-9 in indice della griglia (0-8) */
 int position_to_index(int pos)
@@ -248,6 +236,7 @@ void handle_game(SOCKET client_socket, char *player_name, char *opponent_name,
             clear_screen();
             // 4. Aggiungi visualizzazione ID partita durante l'attesa
             printf("=== TURNO AVVERSARIO ===\n");
+            printf("ID Partita: %d\n", game_id);
             printf("Tu: %c (%s) vs Avversario: %c (%s)\n",
                    player_symbol, player_name, opponent_symbol, opponent_name);
 
@@ -267,6 +256,7 @@ void handle_game(SOCKET client_socket, char *player_name, char *opponent_name,
             clear_screen();
             // 5. Aggiungi ID partita al risultato finale
             printf("=== VITTORIA! ===\n");
+            printf("ID Partita: %d\n", game_id);
             printf("Hai sconfitto %s!\n", opponent_name);
             print_grid(grid);
 
@@ -285,6 +275,7 @@ void handle_game(SOCKET client_socket, char *player_name, char *opponent_name,
 
             clear_screen();
             printf("=== SCONFITTA ===\n");
+            printf("ID Partita: %d\n", game_id);
             printf("%s ti ha sconfitto!\n", opponent_name);
             print_grid(grid);
 
@@ -303,7 +294,7 @@ void handle_game(SOCKET client_socket, char *player_name, char *opponent_name,
 
             clear_screen();
             printf("=== PAREGGIO ===\n");
-
+            printf("ID Partita: %d\n", game_id);
             printf("La partita contro %s è terminata in pareggio!\n", opponent_name);
             print_grid(grid);
 
@@ -319,144 +310,9 @@ void handle_game(SOCKET client_socket, char *player_name, char *opponent_name,
     }
 }
 
-/* Gestisce la creazione di una partita privata */
-void handle_create_private_game(SOCKET client_socket, char* player_name) {
-    clear_screen();
-    printf("=== CREAZIONE STANZA PRIVATA ===\n\n");
-    
-    // Invia richiesta di creazione partita
-    int flag = htons(CREATE_GAME_FLAG);
-    int name_len = htons(strlen(player_name));
-    
-    if (send(client_socket, (const char*)&flag, sizeof(int), 0) < 0 ||
-        send(client_socket, (const char*)&name_len, sizeof(int), 0) < 0 ||
-        send(client_socket, player_name, strlen(player_name), 0) < 0) {
-        fprintf(stderr, "Invio richiesta creazione fallito\n");
-        return;
-    }
-    
-    // Ricevi conferma con ID partita
-    int game_id;
-    if (recv(client_socket, (char*)&flag, sizeof(int), 0) <= 0 ||
-        recv(client_socket, (char*)&game_id, sizeof(int), 0) <= 0) {
-        fprintf(stderr, "Ricezione ID partita fallita\n");
-        return;
-    }
-    
-    game_id = ntohl(game_id);
-    printf("Stanza privata creata con successo!\n");
-    printf("ID Partita: %d\n", game_id);
-    printf("In attesa che un giocatore si unisca...\n\n");
-    
-    // Aspetta una richiesta di partecipazione
-    while (1) {
-        if (recv(client_socket, (char*)&flag, sizeof(int), 0) <= 0) {
-            fprintf(stderr, "Connessione con il server persa.\n");
-            break;
-        }
-        
-        flag = ntohs(flag);
-        
-        if (flag == GAME_REQUEST_FLAG) {
-            // Ricevi nome del giocatore che vuole unirsi
-            int req_name_len;
-            char req_name[50];
-            
-            if (recv(client_socket, (char*)&req_name_len, sizeof(int), 0) <= 0 ||
-                recv(client_socket, req_name, ntohs(req_name_len), 0) <= 0) {
-                fprintf(stderr, "Ricezione richiesta fallita\n");
-                break;
-            }
-            
-            req_name[ntohs(req_name_len)] = '\0';
-            
-            // Chiedi all'utente se accettare
-            printf("\nIl giocatore %s vuole unirsi alla tua partita.\n", req_name);
-            printf("Accetti? (s/n): ");
-            
-            char response;
-            scanf(" %c", &response);
-            while(getchar() != '\n'); // Pulisci buffer
-            
-            // Invia risposta al server
-            int response_flag = (response == 's' || response == 'S') ? 1 : 0;
-            response_flag = htons(response_flag);
-            
-            if (send(client_socket, (const char*)&game_id, sizeof(int), 0) < 0 ||
-                send(client_socket, (const char*)&response_flag, sizeof(int), 0) < 0) {
-                fprintf(stderr, "Invio risposta fallito\n");
-                break;
-            }
-            
-            if (response_flag) {
-                printf("Richiesta accettata. Inizio partita...\n");
-                return; // La partita inizierà ora
-            } else {
-                printf("Richiesta rifiutata. In attesa di altri giocatori...\n");
-            }
-        }
-    }
-}
-/* Gestisce la richiesta di unione a una partita privata */
-void handle_join_private_game(SOCKET client_socket, char* player_name) {
-    clear_screen();
-    printf("=== UNISCITI A STANZA PRIVATA ===\n\n");
-    
-    // Dichiarazione delle variabili mancanti
-    char opponent_name[50] = {0};
-    char player_symbol = ' ', opponent_symbol = ' ';
-    char grid[GRID_SIZE];
-    memset(grid, ' ', GRID_SIZE);
-    
-    // Chiedi ID partita
-    int game_id;
-    char input[20];
-    
-    printf("Inserisci l'ID della partita a cui vuoi unirti: ");
-    fgets(input, sizeof(input), stdin);
-    
-    if (sscanf(input, "%d", &game_id) != 1) {
-        printf("ID non valido.\n");
-        return;
-    }
-    
-    // Invia richiesta di unione
-    int flag = htons(JOIN_GAME_FLAG);
-    int name_len = htons(strlen(player_name));
-    int net_game_id = htonl(game_id);
-    
-    if (send(client_socket, (const char*)&flag, sizeof(int), 0) < 0 ||
-        send(client_socket, (const char*)&name_len, sizeof(int), 0) < 0 ||
-        send(client_socket, player_name, strlen(player_name), 0) < 0 ||
-        send(client_socket, (const char*)&net_game_id, sizeof(int), 0) < 0) {
-        fprintf(stderr, "Invio richiesta unione fallito\n");
-        return;
-    }
-    
-    // Ricevi la risposta dal server
-    int response_flag;
-    if (recv(client_socket, (char*)&response_flag, sizeof(int), 0) <= 0) {
-        fprintf(stderr, "Connessione con il server persa.\n");
-        return;
-    }
-    
-    response_flag = ntohs(response_flag);
-    
-    if (response_flag == GAME_ACCEPTED_FLAG) {
-        printf("Richiesta accettata! Partita in corso...\n");
-        // Aspetta l'inizio effettivo della partita
-        handle_game(client_socket, player_name, opponent_name, player_symbol, opponent_symbol, grid);
-    } else if (response_flag == GAME_REJECTED_FLAG) {
-        printf("Richiesta rifiutata. Il creatore ha declinato la tua richiesta.\n");
-    } else {
-        printf("Errore: partita non trovata o già iniziata.\n");
-    }
-    
-    printf("\nPremi un tasto per continuare...");
-    _getch();
-}
 /* Funzione principale del client */
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[])
+{
     WSADATA wsaData;
     SOCKET client_socket;
     struct sockaddr_in server;
@@ -468,15 +324,18 @@ int main(int argc, char* argv[]) {
     char grid[GRID_SIZE];
 
     // Configurazione iniziale
-    if (argc > 1) {
+    if (argc > 1)
+    {
         strncpy(server_ip, argv[1], sizeof(server_ip) - 1);
-        if (argc > 2) {
+        if (argc > 2)
+        {
             server_port = atoi(argv[2]);
         }
     }
 
     // Inizializzazione Winsock
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+    {
         fprintf(stderr, "WSAStartup fallito. Errore: %d\n", WSAGetLastError());
         return EXIT_FAILURE;
     }
@@ -489,103 +348,129 @@ int main(int argc, char* argv[]) {
     player_name[strcspn(player_name, "\n")] = '\0';
 
     // Menu principale
-    while (1) {
+    while (1)
+    {
         show_menu();
         int choice = get_menu_choice();
 
         client_socket = INVALID_SOCKET;
 
-        switch (choice) {
-            case 1: { // Partita casuale
-                if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
-                    fprintf(stderr, "Creazione socket fallita. Errore: %d\n", WSAGetLastError());
-                    break;
-                }
-            
+        switch (choice)
+        {
+            case 1: {
+                client_socket = socket(AF_INET, SOCK_STREAM, 0);
                 server.sin_addr.s_addr = inet_addr(server_ip);
                 server.sin_family = AF_INET;
                 server.sin_port = htons(server_port);
+                connect(client_socket, (struct sockaddr*)&server, sizeof(server));
             
-                if (connect(client_socket, (struct sockaddr*)&server, sizeof(server)) < 0) {
-                    fprintf(stderr, "Connessione al server fallita. Errore: %d\n", WSAGetLastError());
-                    closesocket(client_socket);
-                    break;
-                }
+                int flag = NO_FLAG;
+                send(client_socket, (const char*)&flag, sizeof(int), 0);
             
-                // Invia prima il flag di partita casuale
-                int casual_flag = htons(WAIT_FLAG); // Usiamo WAIT_FLAG per partita casuale
-                if (send(client_socket, (const char*)&casual_flag, sizeof(int), 0) < 0) {
-                    fprintf(stderr, "Invio flag partita casuale fallito\n");
-                    closesocket(client_socket);
-                    break;
-                }
-            
-                // Poi invia i dati del giocatore
                 int name_len = strlen(player_name);
                 int net_name_len = htons(name_len);
+                send(client_socket, (const char*)&net_name_len, sizeof(int), 0);
+                send(client_socket, player_name, name_len, 0);
             
-                if (send(client_socket, (const char*)&net_name_len, sizeof(int), 0) < 0 ||
-                    send(client_socket, player_name, name_len, 0) < 0) {
-                    fprintf(stderr, "Invio dati giocatore fallito\n");
-                    closesocket(client_socket);
-                    break;
-                }
-            
-                printf("\nConnessione al server stabilita. In attesa di un avversario...\n");
-                handle_game(client_socket, player_name, opponent_name, player_symbol, opponent_symbol, grid);
-                break;
-            }
-            case 2: { // Crea stanza privata
-                if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
-                    fprintf(stderr, "Creazione socket fallita. Errore: %d\n", WSAGetLastError());
-                    break;
-                }
-
-                server.sin_addr.s_addr = inet_addr(server_ip);
-                server.sin_family = AF_INET;
-                server.sin_port = htons(server_port);
-
-                if (connect(client_socket, (struct sockaddr*)&server, sizeof(server)) < 0) {
-                    fprintf(stderr, "Connessione al server fallita. Errore: %d\n", WSAGetLastError());
-                    closesocket(client_socket);
-                    break;
-                }
-
-                handle_create_private_game(client_socket, player_name);
+                printf("Connessione al server stabilita. In attesa di un avversario...");
                 handle_game(client_socket, player_name, opponent_name, player_symbol, opponent_symbol, grid);
                 break;
             }
 
-            case 3: { // Unisciti a stanza privata
-                if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
-                    fprintf(stderr, "Creazione socket fallita. Errore: %d\n", WSAGetLastError());
-                    break;
+        case 2: {
+            client_socket = socket(AF_INET, SOCK_STREAM, 0);
+            server.sin_addr.s_addr = inet_addr(server_ip);
+            server.sin_family = AF_INET;
+            server.sin_port = htons(server_port);
+            connect(client_socket, (struct sockaddr*)&server, sizeof(server));
+        
+            int flag = CREATE_PRIVATE;
+            send(client_socket, (const char*)&flag, sizeof(int), 0);
+        
+            int name_len = strlen(player_name);
+            int net_name_len = htons(name_len);
+            send(client_socket, (const char*)&net_name_len, sizeof(int), 0);
+            send(client_socket, player_name, name_len, 0);
+        
+            int resp_flag, net_room_id;
+            recv(client_socket, (char*)&resp_flag, sizeof(int), 0);
+            recv(client_socket, (char*)&net_room_id, sizeof(int), 0);
+        
+            int room_id = ntohl(net_room_id);
+            printf("Stanza privata creata. ID: %d\nAspettando richieste...\n", room_id);
+        
+            while (1) {
+                recv(client_socket, (char*)&resp_flag, sizeof(int), 0);
+                if (resp_flag == JOIN_REQUEST) {
+                    int len;
+                    recv(client_socket, (char*)&len, sizeof(int), 0);
+                    len = ntohs(len);
+                    char joiner_name[50];
+                    recv(client_socket, joiner_name, len, 0);
+                    joiner_name[len] = '\0';
+                    printf("%s vuole unirsi. Accetti? (y/n): ", joiner_name);
+                    char ch = getchar();
+                    getchar();
+                    int reply = (ch == 'y' || ch == 'Y') ? JOIN_ACCEPTED : JOIN_REJECTED;
+                    send(client_socket, (const char*)&reply, sizeof(int), 0);
+                    if (reply == JOIN_ACCEPTED) {
+                        handle_game(client_socket, player_name, joiner_name, player_symbol, opponent_symbol, grid);
+                        break;
+                    }
                 }
-
-                server.sin_addr.s_addr = inet_addr(server_ip);
-                server.sin_family = AF_INET;
-                server.sin_port = htons(server_port);
-
-                if (connect(client_socket, (struct sockaddr*)&server, sizeof(server)) < 0) {
-                    fprintf(stderr, "Connessione al server fallita. Errore: %d\n", WSAGetLastError());
-                    closesocket(client_socket);
-                    break;
-                }
-
-                handle_join_private_game(client_socket, player_name);
-                handle_game(client_socket, player_name, opponent_name, player_symbol, opponent_symbol, grid);
-                break;
             }
-
-            case 4: // Esci
-                WSACleanup();
-                printf("\nArrivederci!\n");
-                return EXIT_SUCCESS;
+            break;
+        }
+        
+        // CLIENT.C - case 3 (unisciti)
+        case 3: {
+            client_socket = socket(AF_INET, SOCK_STREAM, 0);
+            server.sin_addr.s_addr = inet_addr(server_ip);
+            server.sin_family = AF_INET;
+            server.sin_port = htons(server_port);
+            connect(client_socket, (struct sockaddr*)&server, sizeof(server));
+        
+            int flag = JOIN_PRIVATE;
+            send(client_socket, (const char*)&flag, sizeof(int), 0);
+        
+            printf("Inserisci ID stanza privata: ");
+            int room_id;
+            scanf("%d", &room_id);
+            getchar();
+            int net_room_id = htonl(room_id);
+            send(client_socket, (const char*)&net_room_id, sizeof(int), 0);
+        
+            int name_len = strlen(player_name);
+            int net_name_len = htons(name_len);
+            send(client_socket, (const char*)&net_name_len, sizeof(int), 0);
+            send(client_socket, player_name, name_len, 0);
+        
+            int response;
+            recv(client_socket, (char*)&response, sizeof(int), 0);
+        
+            if (response == JOIN_ACCEPTED) {
+                printf("Richiesta accettata! Avvio partita...\n");
+                handle_game(client_socket, player_name, opponent_name, player_symbol, opponent_symbol, grid);
+            } else {
+                printf("Richiesta rifiutata o stanza non trovata.\n");
+            }
+            break;
+        }
+        
+        
+        case 4: // Esci
+            WSACleanup();
+            printf("\nArrivederci!\n");
+            return EXIT_SUCCESS;
         }
 
-        if (client_socket != INVALID_SOCKET) {
+        if (client_socket != INVALID_SOCKET)
+        {
             closesocket(client_socket);
         }
+
+        printf("\nPremi un tasto per continuare...");
+        _getch();
     }
 
     WSACleanup();
