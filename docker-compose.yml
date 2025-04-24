@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  server:
+    build: .
+    container_name: tris_server
+    working_dir: /app/server
+    command: ./server
+    ports:
+      - "8080:8080"
+    networks:
+      - game_network
+
+  client1:
+    build: .
+    container_name: tris_client1
+    working_dir: /app/client
+    command: ./client server 8080
+    depends_on:
+      - server
+    networks:
+      - game_network
+    stdin_open: true
+    tty: true
+
+  client2:
+    build: .
+    container_name: tris_client2
+    working_dir: /app/client
+    command: ./client server 8080
+    depends_on:
+      - server
+    networks:
+      - game_network
+    stdin_open: true
+    tty: true
+
+networks:
+  game_network:
+    driver: bridge
